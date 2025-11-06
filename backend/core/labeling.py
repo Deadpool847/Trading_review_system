@@ -139,17 +139,25 @@ class TripleBarrierLabeler:
             })
         
         # Create labels DataFrame and join
-        labels_df = pl.DataFrame(labels)
-        df = df.with_row_index()
-        df = df.join(labels_df, on='index', how='left')
-        df = df.drop('index')
-        
-        # Fill unlabeled rows
-        df = df.with_columns([
-            pl.col('meta_label').fill_null(0),
-            pl.col('realized_return').fill_null(0),
-            pl.col('exit_reason').fill_null('no_signal')
-        ])
+        if labels:
+            labels_df = pl.DataFrame(labels)
+            df = df.with_row_index()
+            df = df.join(labels_df, on='index', how='left')
+            df = df.drop('index')
+            
+            # Fill unlabeled rows
+            df = df.with_columns([
+                pl.col('meta_label').fill_null(0),
+                pl.col('realized_return').fill_null(0),
+                pl.col('exit_reason').fill_null('no_signal')
+            ])
+        else:
+            # No labels created, add default columns
+            df = df.with_columns([
+                pl.lit(0).alias('meta_label'),
+                pl.lit(0.0).alias('realized_return'),
+                pl.lit('no_signal').alias('exit_reason')
+            ])
         
         logger.info(f"Created {len(labels)} meta labels, positive: {sum([l['meta_label'] for l in labels])}")
         return df
