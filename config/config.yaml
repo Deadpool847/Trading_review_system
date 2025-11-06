@@ -1,0 +1,77 @@
+# Trading Review Machine Configuration
+
+# Review Scopes
+scopes:
+  daily:
+    candle_interval: 5  # minutes
+    horizon_bars: 12  # ~1 hour lookforward
+    embargo_bars: 2
+  weekly:
+    candle_interval: 5  # minutes
+    horizon_bars: 24  # ~2 hours lookforward
+    embargo_bars: 4
+  monthly:
+    candle_interval: 15  # minutes (toggle to 30)
+    horizon_bars: 16  # ~4-8 hours lookforward
+    embargo_bars: 3
+
+# Triple Barrier Labeling
+target_profit_pct: 1.5  # TP in %
+target_loss_pct: 0.75   # SL in %
+timeout_bars: 16        # max holding period
+
+# Counterfactual Grid
+counterfactual:
+  entry_shifts: [-2, -1, 0, 1, 2, 3]  # bars before/after actual entry
+  exit_modes: ["tp_sl", "time_8", "time_12", "atr_trail"]
+  tp_multipliers: [0.75, 1.0, 1.25]
+  sl_multipliers: [0.75, 1.0, 1.25]
+
+# Regime Detection Thresholds
+regime:
+  trend:
+    min_vwap_slope: 0.0015
+    min_directional_bars: 5
+  chop:
+    max_realized_vol: 0.025
+    max_atr_pct: 0.02
+  breakout:
+    min_volume_ratio: 2.0
+    min_atr_expansion: 1.5
+
+# ML Training
+ml:
+  walk_forward:
+    train_days: 60
+    test_days: 10
+    purge_bars: 5
+  models:
+    logistic:
+      C: 0.1
+      penalty: "l2"
+      max_iter: 500
+    lightgbm:
+      max_depth: 4
+      num_leaves: 15
+      n_estimators: 150
+      learning_rate: 0.05
+      min_child_samples: 30
+  calibration:
+    method: "isotonic"  # or "sigmoid"
+    cv: 3
+
+# Feature Engineering
+features:
+  atr_period: 14
+  vol_lookback: [2, 5, 10]
+  vwap_slope_bars: 10
+  time_features: true  # sin/cos of hour
+
+# Data Paths
+paths:
+  bars: "data/bars"
+  trades: "data/trades"
+  models: "models"
+  reports: "reports"
+  logs: "logs"
+  cache: "data/cache"

@@ -1,0 +1,25 @@
+# Transaction Costs Configuration
+
+# Fees (in basis points)
+fees:
+  equity:
+    brokerage: 3  # 0.03%
+    stt: 2.5      # 0.025%
+    exchange: 0.5 # 0.005%
+    gst: 0.18     # 18% on brokerage
+    sebi: 0.1     # 0.001%
+    total: 6.3    # sum of all
+
+# Slippage Model
+slippage:
+  # Linear model: slippage_bps = base + (impact_coef * sqrt(order_qty / avg_volume))
+  base_bps: 2.0        # base slippage
+  impact_coef: 5.0     # market impact coefficient
+  min_bps: 1.0         # minimum slippage
+  max_bps: 20.0        # maximum slippage cap
+
+# Position Limits
+limits:
+  max_position_pct: 10.0   # % of capital per position
+  max_daily_trades: 8
+  max_sector_exposure: 30.0  # % of capital per sector
