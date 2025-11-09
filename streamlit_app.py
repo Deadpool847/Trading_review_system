@@ -23,6 +23,7 @@ from core.regime_detection import RegimeDetector
 from core.ml_trainer import MLTrainer
 from core.counterfactual import CounterfactualEngine
 from core.kpi_computer import KPIComputer
+from core.stock_analyzer import StockAnalyzer
 from utils.data_loader import load_config, load_costs_config, save_trades_review, save_summary_report
 from utils.helpers import get_ist_timezone, format_date_for_api
 
