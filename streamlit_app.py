@@ -191,33 +191,76 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # =======================
-# TAB 1: Review
+# TAB 1: Stock Analysis (Standalone)
 # =======================
 with tab1:
-    st.markdown('<div class="tab-header"><h2>📈 Trading Review</h2><p>Analyze your trades with ML-powered insights</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="tab-header"><h2>📊 Stock Analysis Brain</h2><p>Comprehensive stock analysis with actionable insights</p></div>', unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns(3)
+    # Custom timeframe selection
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        review_scope = st.selectbox(
-            "Review Scope",
-            ["Daily (5m)", "Weekly (5m)", "Monthly (15m)", "Monthly (30m)"],
-            key="review_scope"
+        symbol_input = st.text_input(
+            "Stock Symbol",
+            "NSE-RELIANCE",
+            help="Format: NSE-SYMBOL (e.g., NSE-RELIANCE, NSE-INFY)",
+            key="symbol_input"
         )
     
     with col2:
-        review_date = st.date_input(
-            "Review Date",
-            datetime.now(),
-            key="review_date"
+        interval_options = {
+            "1 min": 1,
+            "2 min": 2,
+            "3 min": 3,
+            "5 min": 5,
+            "10 min": 10,
+            "15 min": 15,
+            "30 min": 30,
+            "1 hour": 60,
+            "4 hours": 240,
+            "1 day": 1440
+        }
+        interval_choice = st.selectbox(
+            "Candle Interval",
+            list(interval_options.keys()),
+            index=3,  # Default to 5 min
+            key="interval_choice"
         )
+        interval_minutes = interval_options[interval_choice]
     
     with col3:
-        symbol_input = st.text_input(
-            "Symbol",
-            "RELIANCE",
-            key="symbol_input"
+        # Duration limits based on interval
+        duration_limits = {
+            1: 30, 2: 30, 3: 30, 5: 30,
+            10: 90, 15: 90, 30: 90,
+            60: 180, 240: 180, 1440: 180
+        }
+        max_days = duration_limits.get(interval_minutes, 30)
+        
+        days_back = st.number_input(
+            f"Days Back (max {max_days})",
+            min_value=1,
+            max_value=max_days,
+            value=min(7, max_days),
+            key="days_back"
         )
+    
+    with col4:
+        # Optional trade log upload
+        log_file = st.file_uploader(
+            "Trade Logs (Optional)",
+            type=['log', 'txt'],
+            help="Upload your trade logs to merge with analysis",
+            key="log_file"
+        )
+    
+    # Info about duration limits
+    if interval_minutes <= 5:
+        st.info("ℹ️ 1-5 min candles: Max 30 days | 10-30 min: Max 90 days | 1hr+: Max 180 days")
+    elif interval_minutes <= 30:
+        st.info("ℹ️ 10-30 min candles: Max 90 days | 1-5 min: Max 30 days | 1hr+: Max 180 days")
+    else:
+        st.info("ℹ️ 1hr+ candles: Max 180 days | 10-30 min: Max 90 days | 1-5 min: Max 30 days")
     
     if st.button("🚀 Run Review", key="run_review", use_container_width=True):
         if not st.session_state.groww_client:
