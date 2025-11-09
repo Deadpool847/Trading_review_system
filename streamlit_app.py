@@ -444,40 +444,126 @@ with tab1:
                             <div class="metric-label">Regime</div>
                         </div>
                         """, unsafe_allow_html=True)
+                    
+                    # Detailed Insights Section
+                    st.markdown("### 💡 Actionable Insights")
+                    
+                    insight_cols = st.columns(2)
+                    
+                    with insight_cols[0]:
+                        st.markdown("#### 🎯 Trading Signals")
+                        for insight in insights[:len(insights)//2]:
+                            st.markdown(f"- {insight}")
+                    
+                    with insight_cols[1]:
+                        st.markdown("#### 📊 Market Context")
+                        for insight in insights[len(insights)//2:]:
+                            st.markdown(f"- {insight}")
+                    
+                    # Key levels
+                    st.markdown("---")
+                    level_cols = st.columns(3)
+                    
+                    with level_cols[0]:
+                        st.metric("🛡️ Support", f"₹{price_analysis.get('support', 0):.2f}")
+                    
+                    with level_cols[1]:
+                        st.metric("🎯 Current", f"₹{price_analysis.get('current_price', 0):.2f}")
+                    
+                    with level_cols[2]:
+                        st.metric("🚧 Resistance", f"₹{price_analysis.get('resistance', 0):.2f}")
+                    
+                    # Chart with trade markers
+                    st.markdown("---")
+                    st.markdown("### 📈 Interactive Chart")
+                    
+                    fig = make_subplots(
+                        rows=2, cols=1,
+                        shared_xaxes=True,
+                        vertical_spacing=0.05,
+                        row_heights=[0.7, 0.3],
+                        subplot_titles=("Price Action with Trade Markers", "Volume Profile")
+                    )
+                    
+                    # Candlestick
+                    bars_pd = bars_df.to_pandas()
+                    fig.add_trace(
+                        go.Candlestick(
+                            x=bars_pd['ts'],
+                            open=bars_pd['o'],
+                            high=bars_pd['h'],
+                            low=bars_pd['l'],
+                            close=bars_pd['c'],
+                            name="Price"
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # VWAP
+                    fig.add_trace(
+                        go.Scatter(
+                            x=bars_pd['ts'],
+                            y=bars_pd['vwap'],
+                            name="VWAP",
+                            line=dict(color='#f59e0b', width=2, dash='dash')
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # Support and Resistance lines
+                    fig.add_hline(
+                        y=price_analysis.get('support', 0),
+                        line_dash="dot",
+                        line_color="green",
+                        annotation_text="Support",
+                        row=1, col=1
+                    )
+                    
+                    fig.add_hline(
+                        y=price_analysis.get('resistance', 0),
+                        line_dash="dot",
+                        line_color="red",
+                        annotation_text="Resistance",
+                        row=1, col=1
+                    )
+                    
+                    # Add entry points from trade logs
+                    if markers['entry_points']:
+                        entry_times = [e['ts'] for e in markers['entry_points']]
+                        entry_prices = [e['price'] for e in markers['entry_points']]
+                        entry_labels = [f"Entry: ₹{e['price']:.2f} (Qty: {e['qty']})" for e in markers['entry_points']]
                         
-                        # Chart
-                        st.markdown("### 📉 Price Action & Regime")
-                        
-                        fig = make_subplots(
-                            rows=2, cols=1,
-                            shared_xaxes=True,
-                            vertical_spacing=0.05,
-                            row_heights=[0.7, 0.3],
-                            subplot_titles=("Price & VWAP", "Volume & Regime")
-                        )
-                        
-                        # Candlestick
-                        bars_pd = bars_df.to_pandas()
                         fig.add_trace(
-                            go.Candlestick(
-                                x=bars_pd['ts'],
-                                open=bars_pd['o'],
-                                high=bars_pd['h'],
-                                low=bars_pd['l'],
-                                close=bars_pd['c'],
-                                name="Price"
+                            go.Scatter(
+                                x=entry_times,
+                                y=entry_prices,
+                                mode='markers+text',
+                                marker=dict(size=15, color='#10b981', symbol='triangle-up'),
+                                text=['🔵' for _ in entry_times],
+                                textposition='top center',
+                                name='Trade Entries',
+                                hovertext=entry_labels,
+                                showlegend=True
                             ),
                             row=1, col=1
                         )
-                        
-                        # VWAP
-                        fig.add_trace(
-                            go.Scatter(
-                                x=bars_pd['ts'],
-                                y=bars_pd['vwap'],
-                                name="VWAP",
-                                line=dict(color='#f59e0b', width=2)
-                            ),
+                    
+                    # Add target and stop lines from trade logs
+                    for target in markers['target_lines']:
+                        fig.add_hline(
+                            y=target['price'],
+                            line_dash="dash",
+                            line_color="#10b981",
+                            annotation_text=target['label'],
+                            row=1, col=1
+                        )
+                    
+                    for stop in markers['stop_lines']:
+                        fig.add_hline(
+                            y=stop['price'],
+                            line_dash="dash",
+                            line_color="#ef4444",
+                            annotation_text=stop['label'],
                             row=1, col=1
                         )
                         
