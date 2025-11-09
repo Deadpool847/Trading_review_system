@@ -338,19 +338,58 @@ with tab1:
                     
                     bars_df = pl.DataFrame(bars_data)
                     
-                    if len(bars_df) == 0:
-                        st.warning("No data received from API")
-                    else:
-                        # Feature engineering
-                        engineer = FeatureEngineer(st.session_state.config)
-                        bars_df = engineer.compute_features(bars_df)
-                        
-                        # Regime detection
-                        regime_detector = RegimeDetector(st.session_state.config)
-                        bars_df = regime_detector.detect_regime(bars_df)
-                        
-                        # Display KPIs
-                        st.markdown("### 📊 Key Metrics")
+                if len(bars_df) == 0:
+                    st.error("❌ No data available")
+                else:
+                    # Feature engineering
+                    engineer = FeatureEngineer(st.session_state.config)
+                    bars_df = engineer.compute_features(bars_df)
+                    
+                    # Regime detection
+                    regime_detector = RegimeDetector(st.session_state.config)
+                    bars_df = regime_detector.detect_regime(bars_df)
+                    
+                    # Advanced stock analysis
+                    analyzer = StockAnalyzer(st.session_state.config)
+                    price_analysis = analyzer.analyze_price_action(bars_df)
+                    
+                    # Get dominant regime
+                    regime_stats = regime_detector.get_regime_stats(bars_df)
+                    dominant_regime = max(regime_stats.items(), key=lambda x: x[1]['count'])[0] if regime_stats else 'unknown'
+                    
+                    # Generate insights
+                    insights = analyzer.generate_insights(bars_df, price_analysis, dominant_regime)
+                    
+                    # Merge with trade logs if available
+                    markers = analyzer.merge_with_trade_logs(
+                        bars_df,
+                        st.session_state.trade_logs['scanner'],
+                        st.session_state.trade_logs['entries'],
+                        symbol_input
+                    )
+                    
+                    # Generate summary
+                    summary_text = analyzer.generate_summary(
+                        symbol_input,
+                        bars_df,
+                        price_analysis,
+                        insights,
+                        dominant_regime
+                    )
+                    
+                    # Cache for other tabs
+                    st.session_state.cached_bars[symbol_input] = bars_df
+                    st.session_state.analysis_cache[symbol_input] = {
+                        'analysis': price_analysis,
+                        'insights': insights,
+                        'regime': dominant_regime,
+                        'markers': markers,
+                        'summary': summary_text
+                    }
+                    
+                    # Display comprehensive analysis
+                    st.markdown("---")
+                    st.markdown("### 📊 Market Overview")
                         
                         metric_cols = st.columns(5)
                         
