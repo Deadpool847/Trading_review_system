@@ -566,46 +566,92 @@ with tab1:
                             annotation_text=stop['label'],
                             row=1, col=1
                         )
-                        
-                        # Volume bars colored by regime
-                        regime_colors = {
-                            'trend': '#10b981',
-                            'chop': '#64748b',
-                            'breakout': '#f59e0b',
-                            'unknown': '#94a3b8'
-                        }
-                        
-                        for regime, color in regime_colors.items():
-                            regime_bars = bars_pd[bars_pd['regime'] == regime]
-                            if len(regime_bars) > 0:
-                                fig.add_trace(
-                                    go.Bar(
-                                        x=regime_bars['ts'],
-                                        y=regime_bars['v'],
-                                        name=regime.capitalize(),
-                                        marker_color=color,
-                                        showlegend=True
-                                    ),
-                                    row=2, col=1
-                                )
-                        
-                        fig.update_layout(
-                            height=700,
-                            template='plotly_white',
-                            xaxis_rangeslider_visible=False,
-                            hovermode='x unified',
-                            font=dict(family='Inter, sans-serif')
+                    
+                    # Volume bars colored by regime
+                    regime_colors = {
+                        'trend': '#10b981',
+                        'chop': '#64748b',
+                        'breakout': '#f59e0b',
+                        'unknown': '#94a3b8'
+                    }
+                    
+                    for regime, color in regime_colors.items():
+                        regime_bars = bars_pd[bars_pd['regime'] == regime]
+                        if len(regime_bars) > 0:
+                            fig.add_trace(
+                                go.Bar(
+                                    x=regime_bars['ts'],
+                                    y=regime_bars['v'],
+                                    name=regime.capitalize(),
+                                    marker_color=color,
+                                    showlegend=True
+                                ),
+                                row=2, col=1
+                            )
+                    
+                    fig.update_layout(
+                        height=800,
+                        template='plotly_white',
+                        xaxis_rangeslider_visible=False,
+                        hovermode='x unified',
+                        font=dict(family='Inter, sans-serif'),
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
                         )
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Display scanner scores if available
+                    if markers['scanner_scores']:
+                        st.markdown("---")
+                        st.markdown("### 🔍 Scanner Scores from Trade Logs")
                         
-                        st.plotly_chart(fig, use_container_width=True)
+                        scanner_df = pl.DataFrame(markers['scanner_scores'])
+                        st.dataframe(scanner_df.to_pandas(), use_container_width=True)
+                    
+                    # Text Summary
+                    st.markdown("---")
+                    st.markdown("### 📝 Analysis Summary")
+                    
+                    with st.expander("View Full Analysis Report", expanded=False):
+                        st.markdown(summary_text)
+                    
+                    # Download buttons
+                    st.markdown("---")
+                    download_cols = st.columns(2)
+                    
+                    with download_cols[0]:
+                        st.download_button(
+                            label="📥 Download Analysis (Markdown)",
+                            data=summary_text,
+                            file_name=f"{symbol_input}_analysis_{datetime.now().strftime('%Y%m%d')}.md",
+                            mime="text/markdown",
+                            use_container_width=True
+                        )
+                    
+                    with download_cols[1]:
+                        # Prepare CSV data
+                        export_df = bars_df.select(['ts', 'symbol', 'o', 'h', 'l', 'c', 'v', 'vwap', 'regime'])
+                        csv_data = export_df.to_pandas().to_csv(index=False)
                         
-                        # Cache for other tabs
-                        st.session_state.cached_bars[symbol_input] = bars_df
-                        st.success(f"✅ Review complete! {len(bars_df)} bars analyzed.")
-                        
-                except Exception as e:
-                    st.error(f"❌ Error during review: {e}")
-                    logger.error(f"Review error: {e}", exc_info=True)
+                        st.download_button(
+                            label="📥 Download Data (CSV)",
+                            data=csv_data,
+                            file_name=f"{symbol_input}_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                    
+                    st.success(f"✅ Analysis complete! {len(bars_df)} bars analyzed with {len(insights)} actionable insights.")
+                    
+            except Exception as e:
+                st.error(f"❌ Error during analysis: {e}")
+                logger.error(f"Analysis error: {e}", exc_info=True)
 
 # =======================
 # TAB 2: What-If Lab
