@@ -262,37 +262,81 @@ with tab1:
     else:
         st.info("ℹ️ 1hr+ candles: Max 180 days | 10-30 min: Max 90 days | 1-5 min: Max 30 days")
     
-    if st.button("🚀 Run Review", key="run_review", use_container_width=True):
-        if not st.session_state.groww_client:
-            st.error("⚠️ Please connect to Groww API first!")
-        else:
-            with st.spinner("🔄 Analyzing trades..."):
-                try:
-                    # Parse scope
-                    if "Daily" in review_scope:
-                        interval = 5
-                        start_time = datetime.combine(review_date, datetime.min.time().replace(hour=9, minute=15))
-                        end_time = datetime.combine(review_date, datetime.min.time().replace(hour=15, minute=30))
-                    elif "Weekly" in review_scope:
-                        interval = 5
-                        start_time = review_date - timedelta(days=7)
-                        end_time = review_date
-                    else:  # Monthly
-                        interval = 15 if "15m" in review_scope else 30
-                        start_time = review_date.replace(day=1)
-                        end_time = review_date
+    if st.button("🔍 Analyze Stock", key="run_analysis", use_container_width=True):
+        with st.spinner("🧠 Running comprehensive analysis..."):
+            try:
+                # Calculate time range
+                end_time = datetime.now()
+                start_time = end_time - timedelta(days=days_back)
+                
+                # Ensure market hours for intraday
+                if interval_minutes < 1440:  # Not daily
+                    start_time = start_time.replace(hour=9, minute=15, second=0)
+                    end_time = end_time.replace(hour=15, minute=30, second=0)
+                
+                start_time_str = format_date_for_api(start_time)
+                end_time_str = format_date_for_api(end_time)
+                
+                # Process trade logs if uploaded
+                scanner_results = []
+                trade_entries = []
+                
+                if log_file is not None:
+                    # Save uploaded file temporarily
+                    temp_log_path = Path("data/trades/temp_upload.log")
+                    temp_log_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(temp_log_path, 'wb') as f:
+                        f.write(log_file.getvalue())
                     
-                    # Fetch data
                     ingestion = DataIngestion()
+                    scanner_results, trade_entries = ingestion.load_trade_logs(str(temp_log_path))
+                    
+                    if scanner_results or trade_entries:
+                        st.success(f"✅ Loaded {len(scanner_results)} scanner results, {len(trade_entries)} trade entries")
+                        st.session_state.trade_logs = {'scanner': scanner_results, 'entries': trade_entries}
+                
+                # Fetch data (use mock if no Groww connection)
+                ingestion = DataIngestion()
+                
+                if st.session_state.groww_client:
                     bars_df = ingestion.fetch_ohlcv_bars(
                         st.session_state.groww_client,
                         symbol_input,
-                        "NSE",
-                        "CASH",
-                        format_date_for_api(start_time),
-                        format_date_for_api(end_time),
-                        interval
+                        start_time_str,
+                        end_time_str,
+                        interval_minutes
                     )
+                else:
+                    # Generate mock data for standalone analysis
+                    st.warning("⚠️ No Groww connection - using synthetic data for demo")
+                    
+                    from datetime import timezone as tz
+                    n_bars = min(int((days_back * 6.25 * 60) / interval_minutes), 500)  # 6.25 hours per day
+                    timestamps = [start_time + timedelta(minutes=i*interval_minutes) for i in range(n_bars)]
+                    base_price = 2500.0
+                    
+                    bars_data = []
+                    for i, ts in enumerate(timestamps):
+                        price_change = np.random.randn() * 10
+                        close = base_price + price_change
+                        high = close + abs(np.random.randn() * 5)
+                        low = close - abs(np.random.randn() * 5)
+                        open_price = bars_data[-1]['c'] if bars_data else close
+                        volume = int(10000 + np.random.randn() * 2000)
+                        
+                        bars_data.append({
+                            'ts': ts.replace(tzinfo=tz.utc),
+                            'symbol': symbol_input,
+                            'o': open_price,
+                            'h': high,
+                            'l': low,
+                            'c': close,
+                            'v': volume,
+                            'vwap': (high + low + close) / 3
+                        })
+                        base_price = close
+                    
+                    bars_df = pl.DataFrame(bars_data)
                     
                     if len(bars_df) == 0:
                         st.warning("No data received from API")
