@@ -141,6 +141,10 @@ if 'cached_bars' not in st.session_state:
     st.session_state.cached_bars = {}
 if 'trained_model' not in st.session_state:
     st.session_state.trained_model = None
+if 'trade_logs' not in st.session_state:
+    st.session_state.trade_logs = {'scanner': [], 'entries': []}
+if 'analysis_cache' not in st.session_state:
+    st.session_state.analysis_cache = {}
 
 # Sidebar - Groww Authentication
 st.sidebar.title("🔐 Groww Authentication")
