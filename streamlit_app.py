@@ -23,6 +23,7 @@ from core.regime_detection import RegimeDetector
 from core.ml_trainer import MLTrainer
 from core.counterfactual import CounterfactualEngine
 from core.kpi_computer import KPIComputer
+from core.stock_analyzer import StockAnalyzer
 from utils.data_loader import load_config, load_costs_config, save_trades_review, save_summary_report
 from utils.helpers import get_ist_timezone, format_date_for_api
 
@@ -140,6 +141,10 @@ if 'cached_bars' not in st.session_state:
     st.session_state.cached_bars = {}
 if 'trained_model' not in st.session_state:
     st.session_state.trained_model = None
+if 'trade_logs' not in st.session_state:
+    st.session_state.trade_logs = {'scanner': [], 'entries': []}
+if 'analysis_cache' not in st.session_state:
+    st.session_state.analysis_cache = {}
 
 # Sidebar - Groww Authentication
 st.sidebar.title("🔐 Groww Authentication")
@@ -186,202 +191,467 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # =======================
-# TAB 1: Review
+# TAB 1: Stock Analysis (Standalone)
 # =======================
 with tab1:
-    st.markdown('<div class="tab-header"><h2>📈 Trading Review</h2><p>Analyze your trades with ML-powered insights</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="tab-header"><h2>📊 Stock Analysis Brain</h2><p>Comprehensive stock analysis with actionable insights</p></div>', unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns(3)
+    # Custom timeframe selection
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        review_scope = st.selectbox(
-            "Review Scope",
-            ["Daily (5m)", "Weekly (5m)", "Monthly (15m)", "Monthly (30m)"],
-            key="review_scope"
-        )
-    
-    with col2:
-        review_date = st.date_input(
-            "Review Date",
-            datetime.now(),
-            key="review_date"
-        )
-    
-    with col3:
         symbol_input = st.text_input(
-            "Symbol",
-            "RELIANCE",
+            "Stock Symbol",
+            "NSE-RELIANCE",
+            help="Format: NSE-SYMBOL (e.g., NSE-RELIANCE, NSE-INFY)",
             key="symbol_input"
         )
     
-    if st.button("🚀 Run Review", key="run_review", use_container_width=True):
-        if not st.session_state.groww_client:
-            st.error("⚠️ Please connect to Groww API first!")
-        else:
-            with st.spinner("🔄 Analyzing trades..."):
-                try:
-                    # Parse scope
-                    if "Daily" in review_scope:
-                        interval = 5
-                        start_time = datetime.combine(review_date, datetime.min.time().replace(hour=9, minute=15))
-                        end_time = datetime.combine(review_date, datetime.min.time().replace(hour=15, minute=30))
-                    elif "Weekly" in review_scope:
-                        interval = 5
-                        start_time = review_date - timedelta(days=7)
-                        end_time = review_date
-                    else:  # Monthly
-                        interval = 15 if "15m" in review_scope else 30
-                        start_time = review_date.replace(day=1)
-                        end_time = review_date
+    with col2:
+        interval_options = {
+            "1 min": 1,
+            "2 min": 2,
+            "3 min": 3,
+            "5 min": 5,
+            "10 min": 10,
+            "15 min": 15,
+            "30 min": 30,
+            "1 hour": 60,
+            "4 hours": 240,
+            "1 day": 1440
+        }
+        interval_choice = st.selectbox(
+            "Candle Interval",
+            list(interval_options.keys()),
+            index=3,  # Default to 5 min
+            key="interval_choice"
+        )
+        interval_minutes = interval_options[interval_choice]
+    
+    with col3:
+        # Duration limits based on interval
+        duration_limits = {
+            1: 30, 2: 30, 3: 30, 5: 30,
+            10: 90, 15: 90, 30: 90,
+            60: 180, 240: 180, 1440: 180
+        }
+        max_days = duration_limits.get(interval_minutes, 30)
+        
+        days_back = st.number_input(
+            f"Days Back (max {max_days})",
+            min_value=1,
+            max_value=max_days,
+            value=min(7, max_days),
+            key="days_back"
+        )
+    
+    with col4:
+        # Optional trade log upload
+        log_file = st.file_uploader(
+            "Trade Logs (Optional)",
+            type=['log', 'txt'],
+            help="Upload your trade logs to merge with analysis",
+            key="log_file"
+        )
+    
+    # Info about duration limits
+    if interval_minutes <= 5:
+        st.info("ℹ️ 1-5 min candles: Max 30 days | 10-30 min: Max 90 days | 1hr+: Max 180 days")
+    elif interval_minutes <= 30:
+        st.info("ℹ️ 10-30 min candles: Max 90 days | 1-5 min: Max 30 days | 1hr+: Max 180 days")
+    else:
+        st.info("ℹ️ 1hr+ candles: Max 180 days | 10-30 min: Max 90 days | 1-5 min: Max 30 days")
+    
+    if st.button("🔍 Analyze Stock", key="run_analysis", use_container_width=True):
+        with st.spinner("🧠 Running comprehensive analysis..."):
+            try:
+                # Calculate time range
+                end_time = datetime.now()
+                start_time = end_time - timedelta(days=days_back)
+                
+                # Ensure market hours for intraday
+                if interval_minutes < 1440:  # Not daily
+                    start_time = start_time.replace(hour=9, minute=15, second=0)
+                    end_time = end_time.replace(hour=15, minute=30, second=0)
+                
+                start_time_str = format_date_for_api(start_time)
+                end_time_str = format_date_for_api(end_time)
+                
+                # Process trade logs if uploaded
+                scanner_results = []
+                trade_entries = []
+                
+                if log_file is not None:
+                    # Save uploaded file temporarily
+                    temp_log_path = Path("data/trades/temp_upload.log")
+                    temp_log_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(temp_log_path, 'wb') as f:
+                        f.write(log_file.getvalue())
                     
-                    # Fetch data
                     ingestion = DataIngestion()
+                    scanner_results, trade_entries = ingestion.load_trade_logs(str(temp_log_path))
+                    
+                    if scanner_results or trade_entries:
+                        st.success(f"✅ Loaded {len(scanner_results)} scanner results, {len(trade_entries)} trade entries")
+                        st.session_state.trade_logs = {'scanner': scanner_results, 'entries': trade_entries}
+                
+                # Fetch data (use mock if no Groww connection)
+                ingestion = DataIngestion()
+                
+                if st.session_state.groww_client:
                     bars_df = ingestion.fetch_ohlcv_bars(
                         st.session_state.groww_client,
                         symbol_input,
-                        "NSE",
-                        "CASH",
-                        format_date_for_api(start_time),
-                        format_date_for_api(end_time),
-                        interval
+                        start_time_str,
+                        end_time_str,
+                        interval_minutes
+                    )
+                else:
+                    # Generate mock data for standalone analysis
+                    st.warning("⚠️ No Groww connection - using synthetic data for demo")
+                    
+                    from datetime import timezone as tz
+                    n_bars = min(int((days_back * 6.25 * 60) / interval_minutes), 500)  # 6.25 hours per day
+                    timestamps = [start_time + timedelta(minutes=i*interval_minutes) for i in range(n_bars)]
+                    base_price = 2500.0
+                    
+                    bars_data = []
+                    for i, ts in enumerate(timestamps):
+                        price_change = np.random.randn() * 10
+                        close = base_price + price_change
+                        high = close + abs(np.random.randn() * 5)
+                        low = close - abs(np.random.randn() * 5)
+                        open_price = bars_data[-1]['c'] if bars_data else close
+                        volume = int(10000 + np.random.randn() * 2000)
+                        
+                        bars_data.append({
+                            'ts': ts.replace(tzinfo=tz.utc),
+                            'symbol': symbol_input,
+                            'o': open_price,
+                            'h': high,
+                            'l': low,
+                            'c': close,
+                            'v': volume,
+                            'vwap': (high + low + close) / 3
+                        })
+                        base_price = close
+                    
+                    bars_df = pl.DataFrame(bars_data)
+                    
+                if len(bars_df) == 0:
+                    st.error("❌ No data available")
+                else:
+                    # Feature engineering
+                    engineer = FeatureEngineer(st.session_state.config)
+                    bars_df = engineer.compute_features(bars_df)
+                    
+                    # Regime detection
+                    regime_detector = RegimeDetector(st.session_state.config)
+                    bars_df = regime_detector.detect_regime(bars_df)
+                    
+                    # Advanced stock analysis
+                    analyzer = StockAnalyzer(st.session_state.config)
+                    price_analysis = analyzer.analyze_price_action(bars_df)
+                    
+                    # Get dominant regime
+                    regime_stats = regime_detector.get_regime_stats(bars_df)
+                    dominant_regime = max(regime_stats.items(), key=lambda x: x[1]['count'])[0] if regime_stats else 'unknown'
+                    
+                    # Generate insights
+                    insights = analyzer.generate_insights(bars_df, price_analysis, dominant_regime)
+                    
+                    # Merge with trade logs if available
+                    markers = analyzer.merge_with_trade_logs(
+                        bars_df,
+                        st.session_state.trade_logs['scanner'],
+                        st.session_state.trade_logs['entries'],
+                        symbol_input
                     )
                     
-                    if len(bars_df) == 0:
-                        st.warning("No data received from API")
-                    else:
-                        # Feature engineering
-                        engineer = FeatureEngineer(st.session_state.config)
-                        bars_df = engineer.compute_features(bars_df)
+                    # Generate summary
+                    summary_text = analyzer.generate_summary(
+                        symbol_input,
+                        bars_df,
+                        price_analysis,
+                        insights,
+                        dominant_regime
+                    )
+                    
+                    # Cache for other tabs
+                    st.session_state.cached_bars[symbol_input] = bars_df
+                    st.session_state.analysis_cache[symbol_input] = {
+                        'analysis': price_analysis,
+                        'insights': insights,
+                        'regime': dominant_regime,
+                        'markers': markers,
+                        'summary': summary_text
+                    }
+                    
+                    # Display comprehensive analysis
+                    st.markdown("---")
+                    st.markdown("### 📊 Market Overview")
+                    
+                    metric_cols = st.columns(6)
+                    
+                    with metric_cols[0]:
+                        price_class = "positive" if price_analysis.get('price_change_pct', 0) > 0 else "negative"
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value {price_class}">₹{price_analysis.get('current_price', 0):.2f}</div>
+                            <div class="metric-label">Current Price</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with metric_cols[1]:
+                        change_class = "positive" if price_analysis.get('price_change_pct', 0) > 0 else "negative"
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value {change_class}">{price_analysis.get('price_change_pct', 0):.2f}%</div>
+                            <div class="metric-label">Change</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with metric_cols[2]:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value">{price_analysis.get('momentum', 'N/A')}</div>
+                            <div class="metric-label">Momentum</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with metric_cols[3]:
+                        vol_value = price_analysis.get('volatility', 0)
+                        vol_color = "negative" if vol_value > 0.02 else "positive" if vol_value < 0.01 else ""
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value {vol_color}">{vol_value:.3f}</div>
+                            <div class="metric-label">Volatility</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with metric_cols[4]:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value">{price_analysis.get('volume_trend', 'N/A')}</div>
+                            <div class="metric-label">Volume</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with metric_cols[5]:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value">{dominant_regime.upper()}</div>
+                            <div class="metric-label">Regime</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Detailed Insights Section
+                    st.markdown("### 💡 Actionable Insights")
+                    
+                    insight_cols = st.columns(2)
+                    
+                    with insight_cols[0]:
+                        st.markdown("#### 🎯 Trading Signals")
+                        for insight in insights[:len(insights)//2]:
+                            st.markdown(f"- {insight}")
+                    
+                    with insight_cols[1]:
+                        st.markdown("#### 📊 Market Context")
+                        for insight in insights[len(insights)//2:]:
+                            st.markdown(f"- {insight}")
+                    
+                    # Key levels
+                    st.markdown("---")
+                    level_cols = st.columns(3)
+                    
+                    with level_cols[0]:
+                        st.metric("🛡️ Support", f"₹{price_analysis.get('support', 0):.2f}")
+                    
+                    with level_cols[1]:
+                        st.metric("🎯 Current", f"₹{price_analysis.get('current_price', 0):.2f}")
+                    
+                    with level_cols[2]:
+                        st.metric("🚧 Resistance", f"₹{price_analysis.get('resistance', 0):.2f}")
+                    
+                    # Chart with trade markers
+                    st.markdown("---")
+                    st.markdown("### 📈 Interactive Chart")
+                    
+                    fig = make_subplots(
+                        rows=2, cols=1,
+                        shared_xaxes=True,
+                        vertical_spacing=0.05,
+                        row_heights=[0.7, 0.3],
+                        subplot_titles=("Price Action with Trade Markers", "Volume Profile")
+                    )
+                    
+                    # Candlestick
+                    bars_pd = bars_df.to_pandas()
+                    fig.add_trace(
+                        go.Candlestick(
+                            x=bars_pd['ts'],
+                            open=bars_pd['o'],
+                            high=bars_pd['h'],
+                            low=bars_pd['l'],
+                            close=bars_pd['c'],
+                            name="Price"
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # VWAP
+                    fig.add_trace(
+                        go.Scatter(
+                            x=bars_pd['ts'],
+                            y=bars_pd['vwap'],
+                            name="VWAP",
+                            line=dict(color='#f59e0b', width=2, dash='dash')
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # Support and Resistance lines
+                    fig.add_hline(
+                        y=price_analysis.get('support', 0),
+                        line_dash="dot",
+                        line_color="green",
+                        annotation_text="Support",
+                        row=1, col=1
+                    )
+                    
+                    fig.add_hline(
+                        y=price_analysis.get('resistance', 0),
+                        line_dash="dot",
+                        line_color="red",
+                        annotation_text="Resistance",
+                        row=1, col=1
+                    )
+                    
+                    # Add entry points from trade logs
+                    if markers['entry_points']:
+                        entry_times = [e['ts'] for e in markers['entry_points']]
+                        entry_prices = [e['price'] for e in markers['entry_points']]
+                        entry_labels = [f"Entry: ₹{e['price']:.2f} (Qty: {e['qty']})" for e in markers['entry_points']]
                         
-                        # Regime detection
-                        regime_detector = RegimeDetector(st.session_state.config)
-                        bars_df = regime_detector.detect_regime(bars_df)
-                        
-                        # Display KPIs
-                        st.markdown("### 📊 Key Metrics")
-                        
-                        metric_cols = st.columns(5)
-                        
-                        with metric_cols[0]:
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{len(bars_df)}</div>
-                                <div class="metric-label">Total Bars</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        with metric_cols[1]:
-                            avg_vol = bars_df['realized_vol'].mean() if 'realized_vol' in bars_df.columns else 0
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{avg_vol:.3f}</div>
-                                <div class="metric-label">Avg Volatility</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        with metric_cols[2]:
-                            regime_stats = regime_detector.get_regime_stats(bars_df)
-                            trend_pct = regime_stats.get('trend', {}).get('pct', 0)
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{trend_pct:.1f}%</div>
-                                <div class="metric-label">Trend Bars</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        with metric_cols[3]:
-                            chop_pct = regime_stats.get('chop', {}).get('pct', 0)
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{chop_pct:.1f}%</div>
-                                <div class="metric-label">Chop Bars</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        with metric_cols[4]:
-                            breakout_pct = regime_stats.get('breakout', {}).get('pct', 0)
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{breakout_pct:.1f}%</div>
-                                <div class="metric-label">Breakout Bars</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        # Chart
-                        st.markdown("### 📉 Price Action & Regime")
-                        
-                        fig = make_subplots(
-                            rows=2, cols=1,
-                            shared_xaxes=True,
-                            vertical_spacing=0.05,
-                            row_heights=[0.7, 0.3],
-                            subplot_titles=("Price & VWAP", "Volume & Regime")
-                        )
-                        
-                        # Candlestick
-                        bars_pd = bars_df.to_pandas()
-                        fig.add_trace(
-                            go.Candlestick(
-                                x=bars_pd['ts'],
-                                open=bars_pd['o'],
-                                high=bars_pd['h'],
-                                low=bars_pd['l'],
-                                close=bars_pd['c'],
-                                name="Price"
-                            ),
-                            row=1, col=1
-                        )
-                        
-                        # VWAP
                         fig.add_trace(
                             go.Scatter(
-                                x=bars_pd['ts'],
-                                y=bars_pd['vwap'],
-                                name="VWAP",
-                                line=dict(color='#f59e0b', width=2)
+                                x=entry_times,
+                                y=entry_prices,
+                                mode='markers+text',
+                                marker=dict(size=15, color='#10b981', symbol='triangle-up'),
+                                text=['🔵' for _ in entry_times],
+                                textposition='top center',
+                                name='Trade Entries',
+                                hovertext=entry_labels,
+                                showlegend=True
                             ),
                             row=1, col=1
                         )
-                        
-                        # Volume bars colored by regime
-                        regime_colors = {
-                            'trend': '#10b981',
-                            'chop': '#64748b',
-                            'breakout': '#f59e0b',
-                            'unknown': '#94a3b8'
-                        }
-                        
-                        for regime, color in regime_colors.items():
-                            regime_bars = bars_pd[bars_pd['regime'] == regime]
-                            if len(regime_bars) > 0:
-                                fig.add_trace(
-                                    go.Bar(
-                                        x=regime_bars['ts'],
-                                        y=regime_bars['v'],
-                                        name=regime.capitalize(),
-                                        marker_color=color,
-                                        showlegend=True
-                                    ),
-                                    row=2, col=1
-                                )
-                        
-                        fig.update_layout(
-                            height=700,
-                            template='plotly_white',
-                            xaxis_rangeslider_visible=False,
-                            hovermode='x unified',
-                            font=dict(family='Inter, sans-serif')
+                    
+                    # Add target and stop lines from trade logs
+                    for target in markers['target_lines']:
+                        fig.add_hline(
+                            y=target['price'],
+                            line_dash="dash",
+                            line_color="#10b981",
+                            annotation_text=target['label'],
+                            row=1, col=1
                         )
+                    
+                    for stop in markers['stop_lines']:
+                        fig.add_hline(
+                            y=stop['price'],
+                            line_dash="dash",
+                            line_color="#ef4444",
+                            annotation_text=stop['label'],
+                            row=1, col=1
+                        )
+                    
+                    # Volume bars colored by regime
+                    regime_colors = {
+                        'trend': '#10b981',
+                        'chop': '#64748b',
+                        'breakout': '#f59e0b',
+                        'unknown': '#94a3b8'
+                    }
+                    
+                    for regime, color in regime_colors.items():
+                        regime_bars = bars_pd[bars_pd['regime'] == regime]
+                        if len(regime_bars) > 0:
+                            fig.add_trace(
+                                go.Bar(
+                                    x=regime_bars['ts'],
+                                    y=regime_bars['v'],
+                                    name=regime.capitalize(),
+                                    marker_color=color,
+                                    showlegend=True
+                                ),
+                                row=2, col=1
+                            )
+                    
+                    fig.update_layout(
+                        height=800,
+                        template='plotly_white',
+                        xaxis_rangeslider_visible=False,
+                        hovermode='x unified',
+                        font=dict(family='Inter, sans-serif'),
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
+                        )
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Display scanner scores if available
+                    if markers['scanner_scores']:
+                        st.markdown("---")
+                        st.markdown("### 🔍 Scanner Scores from Trade Logs")
                         
-                        st.plotly_chart(fig, use_container_width=True)
+                        scanner_df = pl.DataFrame(markers['scanner_scores'])
+                        st.dataframe(scanner_df.to_pandas(), use_container_width=True)
+                    
+                    # Text Summary
+                    st.markdown("---")
+                    st.markdown("### 📝 Analysis Summary")
+                    
+                    with st.expander("View Full Analysis Report", expanded=False):
+                        st.markdown(summary_text)
+                    
+                    # Download buttons
+                    st.markdown("---")
+                    download_cols = st.columns(2)
+                    
+                    with download_cols[0]:
+                        st.download_button(
+                            label="📥 Download Analysis (Markdown)",
+                            data=summary_text,
+                            file_name=f"{symbol_input}_analysis_{datetime.now().strftime('%Y%m%d')}.md",
+                            mime="text/markdown",
+                            use_container_width=True
+                        )
+                    
+                    with download_cols[1]:
+                        # Prepare CSV data
+                        export_df = bars_df.select(['ts', 'symbol', 'o', 'h', 'l', 'c', 'v', 'vwap', 'regime'])
+                        csv_data = export_df.to_pandas().to_csv(index=False)
                         
-                        # Cache for other tabs
-                        st.session_state.cached_bars[symbol_input] = bars_df
-                        st.success(f"✅ Review complete! {len(bars_df)} bars analyzed.")
-                        
-                except Exception as e:
-                    st.error(f"❌ Error during review: {e}")
-                    logger.error(f"Review error: {e}", exc_info=True)
+                        st.download_button(
+                            label="📥 Download Data (CSV)",
+                            data=csv_data,
+                            file_name=f"{symbol_input}_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                    
+                    st.success(f"✅ Analysis complete! {len(bars_df)} bars analyzed with {len(insights)} actionable insights.")
+                    
+            except Exception as e:
+                st.error(f"❌ Error during analysis: {e}")
+                logger.error(f"Analysis error: {e}", exc_info=True)
 
 # =======================
 # TAB 2: What-If Lab
