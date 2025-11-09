@@ -390,53 +390,60 @@ with tab1:
                     # Display comprehensive analysis
                     st.markdown("---")
                     st.markdown("### 📊 Market Overview")
-                        
-                        metric_cols = st.columns(5)
-                        
-                        with metric_cols[0]:
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{len(bars_df)}</div>
-                                <div class="metric-label">Total Bars</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        with metric_cols[1]:
-                            avg_vol = bars_df['realized_vol'].mean() if 'realized_vol' in bars_df.columns else 0
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{avg_vol:.3f}</div>
-                                <div class="metric-label">Avg Volatility</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        with metric_cols[2]:
-                            regime_stats = regime_detector.get_regime_stats(bars_df)
-                            trend_pct = regime_stats.get('trend', {}).get('pct', 0)
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{trend_pct:.1f}%</div>
-                                <div class="metric-label">Trend Bars</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        with metric_cols[3]:
-                            chop_pct = regime_stats.get('chop', {}).get('pct', 0)
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{chop_pct:.1f}%</div>
-                                <div class="metric-label">Chop Bars</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        with metric_cols[4]:
-                            breakout_pct = regime_stats.get('breakout', {}).get('pct', 0)
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{breakout_pct:.1f}%</div>
-                                <div class="metric-label">Breakout Bars</div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                    
+                    metric_cols = st.columns(6)
+                    
+                    with metric_cols[0]:
+                        price_class = "positive" if price_analysis.get('price_change_pct', 0) > 0 else "negative"
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value {price_class}">₹{price_analysis.get('current_price', 0):.2f}</div>
+                            <div class="metric-label">Current Price</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with metric_cols[1]:
+                        change_class = "positive" if price_analysis.get('price_change_pct', 0) > 0 else "negative"
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value {change_class}">{price_analysis.get('price_change_pct', 0):.2f}%</div>
+                            <div class="metric-label">Change</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with metric_cols[2]:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value">{price_analysis.get('momentum', 'N/A')}</div>
+                            <div class="metric-label">Momentum</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with metric_cols[3]:
+                        vol_value = price_analysis.get('volatility', 0)
+                        vol_color = "negative" if vol_value > 0.02 else "positive" if vol_value < 0.01 else ""
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value {vol_color}">{vol_value:.3f}</div>
+                            <div class="metric-label">Volatility</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with metric_cols[4]:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value">{price_analysis.get('volume_trend', 'N/A')}</div>
+                            <div class="metric-label">Volume</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with metric_cols[5]:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-value">{dominant_regime.upper()}</div>
+                            <div class="metric-label">Regime</div>
+                        </div>
+                        """, unsafe_allow_html=True)
                         
                         # Chart
                         st.markdown("### 📉 Price Action & Regime")
