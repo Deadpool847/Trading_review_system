@@ -24,6 +24,9 @@ from core.ml_trainer import MLTrainer
 from core.counterfactual import CounterfactualEngine
 from core.kpi_computer import KPIComputer
 from core.stock_analyzer import StockAnalyzer
+from core.data_validator import DataValidator
+from core.groww_helper import GrowwHelper
+from core.enhanced_analyzer import EnhancedAnalyzer
 from utils.data_loader import load_config, load_costs_config, save_trades_review, save_summary_report
 from utils.helpers import get_ist_timezone, format_date_for_api
 
@@ -191,80 +194,139 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # =======================
-# TAB 1: Stock Analysis (Standalone)
+# TAB 1: Super-Intelligent Stock Analysis
 # =======================
 with tab1:
-    st.markdown('<div class="tab-header"><h2>📊 Stock Analysis Brain</h2><p>Comprehensive stock analysis with actionable insights</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="tab-header"><h2>🧠 Super-Intelligent Stock Analysis</h2><p>Ruthlessly advanced analysis - Handles ANY data format</p></div>', unsafe_allow_html=True)
     
-    # Custom timeframe selection
-    col1, col2, col3, col4 = st.columns(4)
+    # DATA SOURCE SELECTION
+    st.markdown("### 📥 Step 1: Choose Data Source")
     
-    with col1:
-        symbol_input = st.text_input(
-            "Stock Symbol",
-            "NSE-RELIANCE",
-            help="Format: NSE-SYMBOL (e.g., NSE-RELIANCE, NSE-INFY)",
-            key="symbol_input"
-        )
+    data_source = st.radio(
+        "How do you want to provide data?",
+        ["📁 Upload File (CSV/Excel/Parquet)", "🌐 Fetch from GrowwAPI"],
+        horizontal=True,
+        key="data_source"
+    )
     
-    with col2:
-        interval_options = {
-            "1 min": 1,
-            "2 min": 2,
-            "3 min": 3,
-            "5 min": 5,
-            "10 min": 10,
-            "15 min": 15,
-            "30 min": 30,
-            "1 hour": 60,
-            "4 hours": 240,
-            "1 day": 1440
-        }
-        interval_choice = st.selectbox(
-            "Candle Interval",
-            list(interval_options.keys()),
-            index=3,  # Default to 5 min
-            key="interval_choice"
-        )
-        interval_minutes = interval_options[interval_choice]
+    st.markdown("---")
     
-    with col3:
-        # Duration limits based on interval
-        duration_limits = {
-            1: 30, 2: 30, 3: 30, 5: 30,
-            10: 90, 15: 90, 30: 90,
-            60: 180, 240: 180, 1440: 180
-        }
-        max_days = duration_limits.get(interval_minutes, 30)
+    # OPTION 1: FILE UPLOAD
+    if data_source == "📁 Upload File (CSV/Excel/Parquet)":
+        st.markdown("### 📊 Upload Historical Data")
         
-        days_back = st.number_input(
-            f"Days Back (max {max_days})",
-            min_value=1,
-            max_value=max_days,
-            value=min(7, max_days),
-            key="days_back"
-        )
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            uploaded_file = st.file_uploader(
+                "Upload Historical OHLCV Data",
+                type=['csv', 'xlsx', 'xls', 'parquet'],
+                help="Upload CSV, Excel, or Parquet file with OHLC data. System will auto-detect columns!",
+                key="uploaded_historical"
+            )
+            
+            if uploaded_file:
+                st.success(f"✅ File loaded: {uploaded_file.name}")
+        
+        with col2:
+            symbol_input = st.text_input(
+                "Symbol Name",
+                "UNKNOWN",
+                help="Symbol name (will be added if not in file)",
+                key="symbol_file"
+            )
+            
+            log_file = st.file_uploader(
+                "Trade Logs (Optional)",
+                type=['log', 'txt'],
+                key="log_file_upload"
+            )
+        
+        st.info("💡 **Smart Format Detection**: System automatically detects column names like timestamp/ts/time, open/o, high/h, low/l, close/c/ltp/price, volume/v, etc.")
     
-    with col4:
-        # Optional trade log upload
-        log_file = st.file_uploader(
-            "Trade Logs (Optional)",
-            type=['log', 'txt'],
-            help="Upload your trade logs to merge with analysis",
-            key="log_file"
-        )
-    
-    # Info about duration limits
-    if interval_minutes <= 5:
-        st.info("ℹ️ 1-5 min candles: Max 30 days | 10-30 min: Max 90 days | 1hr+: Max 180 days")
-    elif interval_minutes <= 30:
-        st.info("ℹ️ 10-30 min candles: Max 90 days | 1-5 min: Max 30 days | 1hr+: Max 180 days")
+    # OPTION 2: GROWWAPI
     else:
-        st.info("ℹ️ 1hr+ candles: Max 180 days | 10-30 min: Max 90 days | 1-5 min: Max 30 days")
+        st.markdown("### 🌐 GrowwAPI Configuration")
+        
+        st.warning("⚠️ **IMPORTANT**: You need to implement GrowwAPI integration in `/app/backend/core/groww_helper.py`")
+        
+        with st.expander("🔧 Integration Instructions", expanded=False):
+            st.markdown("""
+            **To enable GrowwAPI:**
+            
+            1. Open `/app/backend/core/groww_helper.py`
+            2. Find the `fetch_historical_data()` method
+            3. Replace the template with your working GrowwAPI code
+            4. Restart Streamlit
+            
+            See `/app/INTEGRATION_GUIDE.md` for detailed instructions.
+            """)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            symbol_input = st.text_input(
+                "Trading Symbol",
+                "NSE-RELIANCE",
+                help="Format: NSE-SYMBOL",
+                key="symbol_api"
+            )
+        
+        with col2:
+            interval_options = {
+                "1 min": 1, "2 min": 2, "3 min": 3, "5 min": 5,
+                "10 min": 10, "15 min": 15, "30 min": 30,
+                "1 hour": 60, "4 hours": 240, "1 day": 1440
+            }
+            interval_choice = st.selectbox(
+                "Candle Interval",
+                list(interval_options.keys()),
+                index=3,
+                key="interval_api"
+            )
+            interval_minutes = interval_options[interval_choice]
+        
+        with col3:
+            duration_limits = {
+                1: 30, 2: 30, 3: 30, 5: 30,
+                10: 90, 15: 90, 30: 90,
+                60: 180, 240: 180, 1440: 180
+            }
+            max_days = duration_limits.get(interval_minutes, 30)
+            
+            days_back = st.number_input(
+                f"Days Back (max {max_days})",
+                min_value=1,
+                max_value=max_days,
+                value=min(7, max_days),
+                key="days_api"
+            )
+        
+        with col4:
+            log_file = st.file_uploader(
+                "Trade Logs (Optional)",
+                type=['log', 'txt'],
+                key="log_file_api"
+            )
+        
+        # Duration info
+        if interval_minutes <= 5:
+            st.info("ℹ️ 1-5 min: Max 30 days | 10-30 min: Max 90 days | 1hr+: Max 180 days")
+        elif interval_minutes <= 30:
+            st.info("ℹ️ 10-30 min: Max 90 days | 1-5 min: Max 30 days | 1hr+: Max 180 days")
+        else:
+            st.info("ℹ️ 1hr+: Max 180 days | 10-30 min: Max 90 days | 1-5 min: Max 30 days")
     
-    if st.button("🔍 Analyze Stock", key="run_analysis", use_container_width=True):
-        with st.spinner("🧠 Running comprehensive analysis..."):
+    st.markdown("---")
+    
+    if st.button("🚀 RUN SUPER-INTELLIGENT ANALYSIS", key="run_super_analysis", use_container_width=True):
+        with st.spinner("🧠 Running ruthlessly advanced analysis..."):
             try:
+                bars_df = None
+                
+                # ==================================================================
+                # STEP 1: LOAD DATA FROM CHOSEN SOURCE
+                # ==================================================================
                 # Calculate time range
                 end_time = datetime.now()
                 start_time = end_time - timedelta(days=days_back)
