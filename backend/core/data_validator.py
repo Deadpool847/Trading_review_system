@@ -216,11 +216,17 @@ class DataValidator:
             # VWAP (calculate if not present)
             normalized_data['vwap'] = (pl.col('h') + pl.col('l') + pl.col('c')) / 3.0
             
-            # Apply transformations
-            normalized_df = df.select([
-                v.alias(k) if isinstance(v, pl.Expr) else pl.lit(v).alias(k)
-                for k, v in normalized_data.items()
-            ])
+            # Apply transformations step by step to avoid column reference errors
+            result_df = df
+            
+            for col_name, col_expr in normalized_data.items():
+                if isinstance(col_expr, pl.Expr):
+                    result_df = result_df.with_columns([col_expr.alias(col_name)])
+                else:
+                    result_df = result_df.with_columns([pl.lit(col_expr).alias(col_name)])
+            
+            # Select only the normalized columns
+            normalized_df = result_df.select(['ts', 'symbol', 'o', 'h', 'l', 'c', 'v', 'vwap'])
             
             # Remove nulls
             normalized_df = normalized_df.drop_nulls()
