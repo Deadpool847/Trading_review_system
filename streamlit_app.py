@@ -317,9 +317,16 @@ with tab1:
         else:
             st.info("ℹ️ 1hr+: Max 180 days | 10-30 min: Max 90 days | 1-5 min: Max 30 days")
     
-    if st.button("🔍 Analyze Stock", key="run_analysis", use_container_width=True):
-        with st.spinner("🧠 Running comprehensive analysis..."):
+    st.markdown("---")
+    
+    if st.button("🚀 RUN SUPER-INTELLIGENT ANALYSIS", key="run_super_analysis", use_container_width=True):
+        with st.spinner("🧠 Running ruthlessly advanced analysis..."):
             try:
+                bars_df = None
+                
+                # ==================================================================
+                # STEP 1: LOAD DATA FROM CHOSEN SOURCE
+                # ==================================================================
                 # Calculate time range
                 end_time = datetime.now()
                 start_time = end_time - timedelta(days=days_back)
