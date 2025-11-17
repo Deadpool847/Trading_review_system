@@ -28,7 +28,7 @@ class StockManager:
             'rows': len(df),
             'start_date': str(df['timestamp'].min()),
             'end_date': str(df['timestamp'].max()),
-            'last_updated': str(pl.datetime('now'))
+            'last_updated': datetime.now().isoformat()
         }
         
         with open(stock_dir / "metadata.json", 'w') as f:
