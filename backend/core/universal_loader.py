@@ -89,16 +89,11 @@ class UniversalLoader:
                     # Parse timestamp
                     ts_col = df[found]
                     if ts_col.dtype == pl.Utf8:
-                        try:
-                            result['timestamp'] = pl.col(found).str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S")
-                        except:
-                            try:
-                                result['timestamp'] = pl.col(found).str.strptime(pl.Datetime, "%Y-%m-%d")
-                            except:
-                                pdf = df.to_pandas()
-                                pdf[found] = pd.to_datetime(pdf[found], errors='coerce')
-                                df = pl.from_pandas(pdf)
-                                result['timestamp'] = pl.col(found)
+                        # Try pandas for flexible parsing
+                        pdf = df.to_pandas()
+                        pdf[found] = pd.to_datetime(pdf[found], errors='coerce')
+                        df = pl.from_pandas(pdf)
+                        result['timestamp'] = pl.col(found)
                     else:
                         result['timestamp'] = pl.col(found)
                 else:
