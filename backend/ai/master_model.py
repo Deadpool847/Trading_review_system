@@ -203,6 +203,7 @@ class MasterModel:
     def _get_last_sequence(self, df: pl.DataFrame, feature_cols: list) -> np.ndarray:
         """Get last sequence for prediction"""
         features = df.select(feature_cols).tail(self.lookback).to_numpy()
+        features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
         return features.flatten().reshape(1, -1)
     
     def save(self):
