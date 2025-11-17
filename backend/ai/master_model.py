@@ -175,9 +175,12 @@ class MasterModel:
     
     def _prepare_sequences(self, df: pl.DataFrame, feature_cols: list) -> Tuple[np.ndarray, np.ndarray]:
         """Prepare sequences for training"""
-        # Get feature matrix
+        # Get feature matrix and replace NaN/inf
         features = df.select(feature_cols).to_numpy()
+        features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
+        
         targets = df['close'].to_numpy()
+        targets = np.nan_to_num(targets, nan=0.0, posinf=0.0, neginf=0.0)
         
         X, y = [], []
         
@@ -188,7 +191,14 @@ class MasterModel:
             # Target: next bar's close
             y.append(targets[i])
         
-        return np.array(X), np.array(y)
+        X = np.array(X)
+        y = np.array(y)
+        
+        # Final NaN check
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        return X, y
     
     def _get_last_sequence(self, df: pl.DataFrame, feature_cols: list) -> np.ndarray:
         """Get last sequence for prediction"""
